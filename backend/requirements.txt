@@ -1,0 +1,9 @@
+Django>=5.2,<5.3
+djangorestframework
+psycopg2-binary
+gunicorn==20.1.0
+Pillow
+python-dotenv
+djangorestframework-simplejwt
+djoser
+drf-extra-fields

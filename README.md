@@ -1,4 +1,9 @@
-Находясь в папке infra, выполните команду docker-compose up. При выполнении этой команды контейнер frontend, описанный в docker-compose.yml, подготовит файлы, необходимые для работы фронтенд-приложения, а затем прекратит свою работу.
+docker-compose down -v --remove-orphans
 
-По адресу http://localhost изучите фронтенд веб-приложения, а по адресу http://localhost/api/docs/ — спецификацию API.
+docker-compose up -d --build
 
+docker-compose exec backend python manage.py migrate
+
+docker-compose exec backend python manage.py load_ingredients
+
+docker-compose exec backend python manage.py createsuperuser
