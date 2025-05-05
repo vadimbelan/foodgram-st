@@ -89,7 +89,6 @@ MEDIA_ROOT = BASE_DIR / "media"
 
 DEFAULT_AUTO_FIELD = "django.db.models.BigAutoField"
 
-#  ↓↓↓↓↓↓  главное изменение  ↓↓↓↓↓↓↓
 AUTH_USER_MODEL = "recipes.UserProfile"
 
 REST_FRAMEWORK = {
@@ -99,7 +98,7 @@ REST_FRAMEWORK = {
     "DEFAULT_PERMISSION_CLASSES": [
         "rest_framework.permissions.AllowAny",
     ],
-    "DEFAULT_PAGINATION_CLASS": "api.pagination.CustomPagination",
+    "DEFAULT_PAGINATION_CLASS": "api.pagination.LimitPageNumberPagination",
     "PAGE_SIZE": 6,
 }
 

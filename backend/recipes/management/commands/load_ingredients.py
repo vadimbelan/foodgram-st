@@ -12,23 +12,24 @@ class Command(BaseCommand):
 
     def handle(self, *args, **options):
         file_path = Path(settings.BASE_DIR) / "data" / "ingredients.json"
+
         try:
-            raw = file_path.read_text(encoding="utf-8")
-            for record in json.loads(raw):
-                Ingredient.objects.get_or_create(**record)
+            records = json.loads(file_path.read_text(encoding="utf-8"))
         except Exception as exc:
             self.stderr.write(
-                self.style.ERROR(
-                    f"Импорт из {file_path.name} не выполнен: {exc}"
-                )
+                self.style.ERROR(f"Не удалось прочитать {file_path.name}: {exc}")
             )
             return
 
+        before = Ingredient.objects.count()
+        objs = [Ingredient(**rec) for rec in records]
+        # ignore_conflicts=True не останавливает импорт при дублях
+        created = Ingredient.objects.bulk_create(objs, ignore_conflicts=True)
+        added = len(created)
+        total = Ingredient.objects.count()
+
         self.stdout.write(
             self.style.SUCCESS(
-                (
-                    f"Импорт из {file_path.name} завершён. "
-                    f"Всего продуктов: {Ingredient.objects.count()}"
-                )
+                f"Импорт завершён: добавлено {added}, всего продуктов {total}"
             )
         )

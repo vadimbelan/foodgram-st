@@ -24,7 +24,7 @@ from recipes.models import (
     ShoppingCartRecipe,
     UserSubscription,
 )
-from .pagination import CustomPagination
+from .pagination import LimitPageNumberPagination
 from .serializers import (
     IngredientSerializer,
     RecipeSerializer,
@@ -56,24 +56,31 @@ class RecipeViewSet(viewsets.ModelViewSet):
     queryset = Dish.objects.prefetch_related("recipe_ingredients__ingredient")
     serializer_class = RecipeSerializer
     permission_classes = (IsAuthenticatedOrReadOnly,)
-    pagination_class = CustomPagination
+    pagination_class = LimitPageNumberPagination
 
     # ~~~~~~~~~~~~~~~~~~~ helpers ~~~~~~~~~~~~~~~~~~~
     @staticmethod
-    def _toggle(request, dish: Dish, model):
-        if request.method == "POST":
-            _, created = model.objects.get_or_create(
-                user=request.user, dish=dish
-            )
-            if not created:
-                raise ValidationError({"detail": "Рецепт уже присутствует"})
-            return Response(
-                ShortRecipeSerializer(dish).data,
-                status=status.HTTP_201_CREATED,
-            )
+    def _toggle(request, model, pk):
+        """Добавить/удалить рецепт из связанной модели."""
+        dish = get_object_or_404(Dish, pk=pk)
 
-        get_object_or_404(model, user=request.user, dish=dish).delete()
-        return Response(status=status.HTTP_204_NO_CONTENT)
+        # DELETE ─ ранний выход
+        if request.method == "DELETE":
+            get_object_or_404(model, user=request.user, dish=dish).delete()
+            return Response(status=status.HTTP_204_NO_CONTENT)
+
+        # POST
+        _, created = model.objects.get_or_create(
+            user=request.user, dish=dish
+        )
+        if not created:
+            raise ValidationError(
+                {"detail": f"Рецепт «{dish.name}» уже присутствует"}
+            )
+        return Response(
+            ShortRecipeSerializer(dish).data,
+            status=status.HTTP_201_CREATED,
+        )
 
     # ~~~~~~~~~~~~~~~~~~~ queryset ~~~~~~~~~~~~~~~~~~
     def get_queryset(self):
@@ -106,8 +113,7 @@ class RecipeViewSet(viewsets.ModelViewSet):
         permission_classes=[IsAuthenticated],
     )
     def favorite(self, request, pk=None):
-        dish = get_object_or_404(Dish, pk=pk)
-        return self._toggle(request, dish, FavoriteRecipe)
+        return self._toggle(request, FavoriteRecipe, pk)
 
     @action(
         detail=True,
@@ -116,15 +122,16 @@ class RecipeViewSet(viewsets.ModelViewSet):
         permission_classes=[IsAuthenticated],
     )
     def shopping_cart(self, request, pk=None):
-        dish = get_object_or_404(Dish, pk=pk)
-        return self._toggle(request, dish, ShoppingCartRecipe)
+        return self._toggle(request, ShoppingCartRecipe, pk)
 
     @action(detail=True, methods=["get"], url_path="get-link")
     def get_link(self, request, pk=None):
         return Response(
-            {"short-link": request.build_absolute_uri(
-                reverse("recipe-short-link", args=[pk])
-            )}
+            {
+                "short-link": request.build_absolute_uri(
+                    reverse("recipe-short-link", args=[pk])
+                )
+            }
         )
 
     @action(
@@ -146,9 +153,9 @@ class RecipeViewSet(viewsets.ModelViewSet):
             .order_by("name")
         )
 
-        dish_titles = (
+        dish_info = (
             Dish.objects.filter(shoppingcarts__user=request.user)
-            .values_list("name", flat=True)
+            .values_list("name", "creator__username")
             .order_by("name")
         )
 
@@ -157,15 +164,15 @@ class RecipeViewSet(viewsets.ModelViewSet):
                 f"Список покупок на {timezone.localdate():%d.%m.%Y}:",
                 "Продукты:",
                 *[
-                    f"{idx}. {row['name'].capitalize()} ({row['unit']}) — "
-                    f"{row['total']}"
+                    f"{idx}. {row['name'].capitalize()} "
+                    f"({row['unit']}) — {row['total']}"
                     for idx, row in enumerate(totals, 1)
                 ],
                 "",
                 "Рецепты, для которых нужны эти продукты:",
                 *[
-                    f"{idx}. {title}"
-                    for idx, title in enumerate(dish_titles, 1)
+                    f"{idx}. {title} — @{author}"
+                    for idx, (title, author) in enumerate(dish_info, 1)
                 ],
             ]
         )
@@ -182,7 +189,7 @@ class UserViewSet(DjoserUserViewSet):
     queryset = User.objects.all()
     serializer_class = PublicUserSerializer
     permission_classes = (IsAuthenticatedOrReadOnly,)
-    pagination_class = CustomPagination
+    pagination_class = LimitPageNumberPagination
 
     @action(
         detail=False,
@@ -201,13 +208,17 @@ class UserViewSet(DjoserUserViewSet):
     )
     def avatar(self, request):
         user = request.user
-        if request.method == "PUT":
-            ser = self.get_serializer(user, data=request.data, partial=True)
-            ser.is_valid(raise_exception=True)
-            ser.save()
-            return Response({"avatar": ser.data["avatar"]})
-        user.avatar.delete(save=True)
-        return Response(status=status.HTTP_204_NO_CONTENT)
+
+        # DELETE ─ ранний выход
+        if request.method == "DELETE":
+            user.avatar.delete(save=True)
+            return Response(status=status.HTTP_204_NO_CONTENT)
+
+        # PUT
+        ser = self.get_serializer(user, data=request.data, partial=True)
+        ser.is_valid(raise_exception=True)
+        ser.save()
+        return Response({"avatar": ser.data["avatar"]})
 
     @action(
         detail=True,
@@ -218,29 +229,31 @@ class UserViewSet(DjoserUserViewSet):
     def subscribe(self, request, id=None):
         author = get_object_or_404(User, pk=id)
 
-        if author == request.user and request.method == "POST":
+        if author == request.user:
             raise ValidationError({"detail": "Нельзя подписаться на себя"})
 
-        if request.method == "POST":
-            sub, created = UserSubscription.objects.get_or_create(
-                subscriber=request.user, author=author
-            )
-            if not created:
-                raise ValidationError(
-                    {"detail": "Уже подписаны на этого автора"}
-                )
-            return Response(
-                PublicUserSerializer(
-                    author,
-                    context={"request": request}
-                ).data,
-                status=status.HTTP_201_CREATED,
-            )
+        # DELETE ─ ранний выход
+        if request.method == "DELETE":
+            get_object_or_404(
+                UserSubscription, subscriber=request.user, author=author
+            ).delete()
+            return Response(status=status.HTTP_204_NO_CONTENT)
 
-        get_object_or_404(
-            UserSubscription, subscriber=request.user, author=author
-        ).delete()
-        return Response(status=status.HTTP_204_NO_CONTENT)
+        # POST
+        sub, created = UserSubscription.objects.get_or_create(
+            subscriber=request.user, author=author
+        )
+        if not created:
+            raise ValidationError(
+                {"detail": f"Вы уже подписаны на автора @{author.username}"}
+            )
+        return Response(
+            PublicUserSerializer(
+                author,
+                context={"request": request}
+            ).data,
+            status=status.HTTP_201_CREATED,
+        )
 
     @action(
         detail=False,
@@ -249,11 +262,13 @@ class UserViewSet(DjoserUserViewSet):
         permission_classes=[IsAuthenticated],
     )
     def subscriptions(self, request):
-        qs = request.user.subscriptions.select_related("author")
-        paginator = CustomPagination()
-        page = paginator.paginate_queryset(qs, request)
+        """Список авторов, на которых подписан текущий пользователь."""
+        paginator = LimitPageNumberPagination()
+        subs_qs = request.user.subscriptions.select_related("author")
+        page = paginator.paginate_queryset(subs_qs, request)
+
         authors = [sub.author for sub in page]
-        ser = SubscribedAuthorSerializer(
+        data = SubscribedAuthorSerializer(
             authors, many=True, context={"request": request}
-        )
-        return paginator.get_paginated_response(ser.data)
+        ).data
+        return paginator.get_paginated_response(data)

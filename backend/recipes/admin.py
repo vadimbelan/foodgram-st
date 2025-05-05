@@ -1,7 +1,7 @@
 from django.contrib import admin
 from django.contrib.auth.admin import UserAdmin
 from django.db import models
-from django.utils.safestring import mark_safe
+from django.utils.html import format_html
 
 from .models import (
     UserProfile,
@@ -16,7 +16,7 @@ from .models import (
 
 # ────────────────────────────  USERS  ─────────────────────────────
 @admin.register(UserProfile)
-class CustomUserAdmin(UserAdmin):
+class UserProfileAdmin(UserAdmin):
     list_display = (
         "id",
         "email",
@@ -26,6 +26,7 @@ class CustomUserAdmin(UserAdmin):
         "is_active",
         "recipes_count",
         "subscribers_count",
+        "subscriptions_count",
     )
     readonly_fields = ("recipes_count", "subscribers_count", "avatar_preview")
     fieldsets = UserAdmin.fieldsets + (
@@ -42,10 +43,14 @@ class CustomUserAdmin(UserAdmin):
     def subscribers_count(self, user: UserProfile):
         return user.followers.count()
 
+    @admin.display(description="Подписок")
+    def subscriptions_count(self, user: UserProfile):
+        return user.subscriptions.count()
+
     @admin.display(description="Превью")
     def avatar_preview(self, user: UserProfile):
         if user.avatar:
-            return mark_safe(f'<img src="{user.avatar.url}" height="64" />')
+            return format_html('<img src="{}" height="64" />', user.avatar.url)
         return "—"
 
 
@@ -62,9 +67,10 @@ class IngredientUsedFilter(admin.SimpleListFilter):
     """Есть ли продукт хотя бы в одном рецепте."""
     title = "Использование"
     parameter_name = "used"
+    LOOKUPS = (("yes", "Есть в рецептах"), ("no", "Не используется"))
 
     def lookups(self, request, model_admin):
-        return (("yes", "Есть в рецептах"), ("no", "Не используется"))
+        return self.LOOKUPS
 
     def queryset(self, request, queryset):
         if self.value() == "yes":
@@ -96,34 +102,25 @@ class CookingTimeFilter(admin.SimpleListFilter):
             min_time=models.Min("cooking_time"),
             max_time=models.Max("cooking_time"),
         )
-        low = agg["min_time"] or 0
-        high = agg["max_time"] or 60
-        mid = (low + high) // 2
+        self.low = agg["min_time"] or 0
+        self.high = agg["max_time"] or 60
+        self.mid = (self.low + self.high) // 2
         return (
-            ("fast", f"≤ {mid // 2} мин"),
-            ("medium", f"{mid // 2 + 1}‑{mid} мин"),
-            ("slow", f"> {mid} мин"),
+            ("fast", f"≤ {self.mid} мин"),
+            ("medium", f"{self.mid + 1}‑{self.high} мин"),
+            ("slow", f"> {self.high} мин"),
         )
 
     def queryset(self, request, queryset):
-        val = self.value()
-        if not val:
+        if not self.value():
             return queryset
-        agg = queryset.aggregate(
-            min_time=models.Min("cooking_time"),
-            max_time=models.Max("cooking_time")
-        )
-        low = agg["min_time"] or 0
-        high = agg["max_time"] or 60
-        mid = (low + high) // 2
-        if val == "fast":
-            return queryset.filter(cooking_time__lte=mid // 2)
-        if val == "medium":
+        if self.value() == "fast":
+            return queryset.filter(cooking_time__lte=self.mid)
+        if self.value() == "medium":
             return queryset.filter(
-                cooking_time__gt=mid // 2,
-                cooking_time__lte=mid,
+                cooking_time__gt=self.mid, cooking_time__lte=self.high
             )
-        return queryset.filter(cooking_time__gt=mid)
+        return queryset.filter(cooking_time__gt=self.high)
 
 
 # ────────────────────────────  DISHES  ────────────────────────────
@@ -149,21 +146,18 @@ class DishAdmin(admin.ModelAdmin):
 
     @admin.display(description="Продукты")
     def ingredients_list(self, dish: Dish):
-        items = (
-            dish.recipe_ingredients.select_related("ingredient")
-            .values_list(
-                "ingredient__name", "quantity", "ingredient__measurement_unit"
-            )
+        return format_html(
+            "<br>".join(
+                f"{item.ingredient.name} — {item.quantity} "
+                f"{item.ingredient.measurement_unit}"
+                for item in dish.recipe_ingredients.select_related("ingredient")
+            ) or "—"
         )
-        html = "<br>".join(
-            f"{name} — {qty} {unit}" for name, qty, unit in items
-        )
-        return mark_safe(html) if html else "—"
 
     @admin.display(description="Фото")
     def image_preview(self, dish: Dish):
         if dish.image:
-            return mark_safe(f'<img src="{dish.image.url}" height="80" />')
+            return format_html('<img src="{}" height="80" />', dish.image.url)
         return "—"
 
 
