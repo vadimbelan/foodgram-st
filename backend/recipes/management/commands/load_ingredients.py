@@ -21,7 +21,6 @@ class Command(BaseCommand):
             )
             return
 
-        before = Ingredient.objects.count()
         objs = [Ingredient(**rec) for rec in records]
         # ignore_conflicts=True не останавливает импорт при дублях
         created = Ingredient.objects.bulk_create(objs, ignore_conflicts=True)
