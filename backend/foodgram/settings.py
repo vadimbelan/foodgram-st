@@ -4,34 +4,30 @@ from dotenv import load_dotenv
 
 load_dotenv()
 
-# Путь к корневой директории проекта
 BASE_DIR = Path(__file__).resolve().parent.parent
 
-# Открытые переменные конфигурации
 SECRET_KEY = os.getenv("SECRET_KEY", "your-secret-key")
 DEBUG = os.getenv("DEBUG", "True") == "True"
 ALLOWED_HOSTS = os.getenv("ALLOWED_HOSTS", "localhost,127.0.0.1").split(",")
 
-# Приложения
 INSTALLED_APPS = [
+    # ─── Django ───────────────────────────────────────────
     "django.contrib.admin",
     "django.contrib.auth",
     "django.contrib.contenttypes",
     "django.contrib.sessions",
     "django.contrib.messages",
     "django.contrib.staticfiles",
-
+    # ─── 3‑rd party ───────────────────────────────────────
     "rest_framework",
     "rest_framework.authtoken",
     "rest_framework_simplejwt",
-
-    "api",
-    "users",
-    "recipes",
     "djoser",
+    # ─── project apps ─────────────────────────────────────
+    "recipes",           # ← содержит ВСЕ модели
+    "api",
 ]
 
-# Middleware для обработки запросов
 MIDDLEWARE = [
     "django.middleware.security.SecurityMiddleware",
     "django.contrib.sessions.middleware.SessionMiddleware",
@@ -44,7 +40,6 @@ MIDDLEWARE = [
 
 ROOT_URLCONF = "foodgram.urls"
 
-# Настройки для шаблонов
 TEMPLATES = [
     {
         "BACKEND": "django.template.backends.django.DjangoTemplates",
@@ -63,7 +58,6 @@ TEMPLATES = [
 
 WSGI_APPLICATION = "foodgram.wsgi.application"
 
-# Настройки базы данных
 DATABASES = {
     "default": {
         "ENGINE": "django.db.backends.postgresql",
@@ -75,29 +69,18 @@ DATABASES = {
     }
 }
 
-# Валидаторы паролей
 AUTH_PASSWORD_VALIDATORS = [
-    {
-        "NAME": "django.contrib.auth.password_validation.UserAttributeSimilarityValidator",
-    },
-    {
-        "NAME": "django.contrib.auth.password_validation.MinimumLengthValidator",
-    },
-    {
-        "NAME": "django.contrib.auth.password_validation.CommonPasswordValidator",
-    },
-    {
-        "NAME": "django.contrib.auth.password_validation.NumericPasswordValidator",
-    },
+    {"NAME": "django.contrib.auth.password_validation.UserAttributeSimilarityValidator"},
+    {"NAME": "django.contrib.auth.password_validation.MinimumLengthValidator"},
+    {"NAME": "django.contrib.auth.password_validation.CommonPasswordValidator"},
+    {"NAME": "django.contrib.auth.password_validation.NumericPasswordValidator"},
 ]
 
-# Международная настройка
 LANGUAGE_CODE = "ru"
 TIME_ZONE = "Europe/Moscow"
 USE_I18N = True
 USE_TZ = True
 
-# Статические и медиа файлы
 STATIC_URL = "/static/"
 STATIC_ROOT = BASE_DIR / "static"
 
@@ -106,10 +89,9 @@ MEDIA_ROOT = BASE_DIR / "media"
 
 DEFAULT_AUTO_FIELD = "django.db.models.BigAutoField"
 
-# Пользовательская модель
-AUTH_USER_MODEL = "users.UserProfile"
+#  ↓↓↓↓↓↓  главное изменение  ↓↓↓↓↓↓↓
+AUTH_USER_MODEL = "recipes.UserProfile"
 
-# Настройки для DRF
 REST_FRAMEWORK = {
     "DEFAULT_AUTHENTICATION_CLASSES": [
         "rest_framework.authentication.TokenAuthentication",
@@ -134,7 +116,6 @@ DJOSER = {
     "HIDE_USERS": False,
 }
 
-# Доверенные Origin’ы для CSRF (схема://хост[:порт])
 CSRF_TRUSTED_ORIGINS = os.getenv(
     "CSRF_TRUSTED_ORIGINS",
     "http://localhost,http://127.0.0.1"

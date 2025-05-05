@@ -8,33 +8,22 @@ from recipes.models import Ingredient
 
 
 class Command(BaseCommand):
-    help = 'Импортирует ингредиенты из JSON‑файла в базу данных'
+    help = "Импортирует продукты из JSON‑файла в базу"
 
     def handle(self, *args, **options):
-        # Формируем путь к файлу
-        json_path = Path(settings.BASE_DIR) / 'data' / 'ingredients.json'
-
-        # Проверяем существование
-        if not json_path.exists():
-            self.stderr.write(self.style.ERROR(f'Не найден файл: {json_path}'))
-            return
-
-        # Читаем и разбираем JSON
+        file_path = Path(settings.BASE_DIR) / "data" / "ingredients.json"
         try:
-            raw = json_path.read_text(encoding='utf-8')
-            items = json.loads(raw)
-        except Exception as e:
-            self.stderr.write(self.style.ERROR(f'Ошибка при чтении JSON: {e}'))
+            raw = file_path.read_text(encoding="utf-8")
+            for record in json.loads(raw):
+                Ingredient.objects.get_or_create(**record)
+        except Exception as exc:
+            self.stderr.write(
+                self.style.ERROR(f"Импорт из {file_path.name} не выполнен: {exc}")
+            )
             return
 
-        # Подготавливаем объекты и сохраняем одним запросом
-        objs = [Ingredient(**data) for data in items]
-        created = Ingredient.objects.bulk_create(objs)
-
-        # Выводим результат
-        count = len(created)
         self.stdout.write(
             self.style.SUCCESS(
-                f"Загружено {count} ингредиентов."
+                f"Импорт из {file_path.name} завершён. Всего продуктов: {Ingredient.objects.count()}"
             )
         )

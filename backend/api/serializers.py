@@ -1,6 +1,4 @@
-# ------------------------------------------------------------ IMPORTS
-from django.core.validators import MinValueValidator
-from djoser.serializers import UserSerializer as DjoserUserSerializer
+from django.contrib.auth import get_user_model
 from drf_extra_fields.fields import Base64ImageField
 from rest_framework import serializers
 
@@ -10,35 +8,35 @@ from recipes.models import (
     IngredientAmount,
     FavoriteRecipe,
     ShoppingCartRecipe,
+    UserSubscription,
 )
-from users.models import UserSubscription
+
+User = get_user_model()
 
 # ----------------------------------------------------- BASIC SERIALIZERS
-
-
 class IngredientSerializer(serializers.ModelSerializer):
     class Meta:
         model = Ingredient
         fields = ("id", "name", "measurement_unit")
+        read_only_fields = fields
 
 
 class IngredientAmountSerializer(serializers.ModelSerializer):
-    """Связка «ингредиент — кол‑во» для рецепта."""
+    """
+    Связка «продукт — кол‑во».
+
+    Принимаем с клиента поле **amount**, а сохраняем
+    во внутреннее `quantity`, так что API остаётся совместимо.
+    """
     id = serializers.PrimaryKeyRelatedField(
         queryset=Ingredient.objects.all(),
         source="ingredient",
     )
-    name = serializers.CharField(
-        source="ingredient.name",
-        read_only=True,
-    )
+    name = serializers.CharField(source="ingredient.name", read_only=True)
     measurement_unit = serializers.CharField(
-        source="ingredient.measurement_unit",
-        read_only=True,
+        source="ingredient.measurement_unit", read_only=True
     )
-    amount = serializers.IntegerField(
-        validators=[MinValueValidator(1, "Минимум 1")]
-    )
+    amount = serializers.IntegerField(min_value=1, source="quantity")
 
     class Meta:
         model = IngredientAmount
@@ -46,74 +44,68 @@ class IngredientAmountSerializer(serializers.ModelSerializer):
 
 
 class ShortRecipeSerializer(serializers.ModelSerializer):
-    """Облегчённый рецепт (для списков)."""
-    name = serializers.CharField(source="title")
-    cooking_time = serializers.IntegerField(source="cook_time")
-
+    """Компактное представление рецепта (только чтение)."""
     class Meta:
         model = Dish
         fields = ("id", "name", "image", "cooking_time")
+        read_only_fields = fields
 
 
 # ---------------------------------------------------------- USER‑SIDE
-class PublicUserSerializer(DjoserUserSerializer):
-    """Публичный пользователь + аватар + флаг подписки."""
+class PublicUserSerializer(serializers.ModelSerializer):
     avatar = Base64ImageField(required=False)
     is_subscribed = serializers.SerializerMethodField()
 
-    class Meta(DjoserUserSerializer.Meta):
-        fields = (*DjoserUserSerializer.Meta.fields, "avatar", "is_subscribed")
+    class Meta:
+        model = User
+        fields = (
+            "id",
+            "email",
+            "username",
+            "first_name",
+            "last_name",
+            "avatar",
+            "is_subscribed",
+        )
+        read_only_fields = ("id", "is_subscribed")
 
-    def get_is_subscribed(self, obj):
-        req = self.context.get("request")
+    def get_is_subscribed(self, author: User) -> bool:
+        request = self.context.get("request")
         return (
-            req
-            and req.user.is_authenticated
+            request
+            and request.user.is_authenticated
             and UserSubscription.objects.filter(
-                subscriber=req.user,
-                author=obj,
+                subscriber=request.user, author=author
             ).exists()
         )
 
 
 class SubscribedAuthorSerializer(PublicUserSerializer):
-    """Пользователь‑автор с урезанным набором рецептов."""
     recipes = serializers.SerializerMethodField()
     recipes_count = serializers.IntegerField(
-        source="recipes.count",
-        read_only=True,
+        source="recipes.count", read_only=True
     )
 
     class Meta(PublicUserSerializer.Meta):
-        fields = (
-            *PublicUserSerializer.Meta.fields,
-            "recipes",
-            "recipes_count",
-        )
+        fields = (*PublicUserSerializer.Meta.fields, "recipes", "recipes_count")
 
-    def get_recipes(self, author):
-        limit = int(
-            self.context["request"].query_params.get("recipes_limit", 10**10)
-        )
-        qs = author.recipes.all()[:limit]
+    def get_recipes(self, author: User):
+        limit_param = self.context["request"].query_params.get("recipes_limit")
+        try:
+            limit = int(limit_param) if limit_param else None
+        except ValueError:
+            limit = None
+        qs = author.recipes.all()[:limit] if limit else author.recipes.all()
         return ShortRecipeSerializer(qs, many=True).data
 
 
 # ----------------------------------------------------------- MAIN DISH
 class RecipeSerializer(serializers.ModelSerializer):
-    """Полная карточка рецепта."""
-    # алиасы под API
-    name = serializers.CharField(source="title")
-    text = serializers.CharField(source="description")
-    cooking_time = serializers.IntegerField(source="cook_time")
-
     author = PublicUserSerializer(source="creator", read_only=True)
     ingredients = IngredientAmountSerializer(
-        source="recipe_ingredients",
-        many=True,
+        source="recipe_ingredients", many=True
     )
     image = Base64ImageField()
-
     is_favorited = serializers.SerializerMethodField()
     is_in_shopping_cart = serializers.SerializerMethodField()
 
@@ -131,45 +123,41 @@ class RecipeSerializer(serializers.ModelSerializer):
             "is_in_shopping_cart",
         )
 
-    # ------------------------ PRIVATE UTILS -------------------------
-    @staticmethod
-    def _bulk_save_ingredients(dish, items):
+    # ─────────────────── flags ────────────────────
+    def _flag(self, model, dish: Dish) -> bool:
+        request = self.context.get("request")
+        return (
+            request
+            and request.user.is_authenticated
+            and model.objects.filter(user=request.user, dish=dish).exists()
+        )
+
+    def get_is_favorited(self, dish: Dish) -> bool:
+        return self._flag(FavoriteRecipe, dish)
+
+    def get_is_in_shopping_cart(self, dish: Dish) -> bool:
+        return self._flag(ShoppingCartRecipe, dish)
+
+    # ─────────────────── CRUD ─────────────────────
+    def _bulk_save_ingredients(self, dish: Dish, items):
         IngredientAmount.objects.bulk_create(
             IngredientAmount(
                 dish=dish,
                 ingredient=item["ingredient"],
-                amount=item["amount"],
+                quantity=item["quantity"],
             )
             for item in items
         )
 
-    def _flag(self, model, dish):
-        req = self.context.get("request")
-        return (
-            req
-            and req.user.is_authenticated
-            and model.objects.filter(user=req.user, dish=dish).exists()
-        )
-
-    # ---------------------------- FLAGS -----------------------------
-    def get_is_favorited(self, obj):
-        return self._flag(FavoriteRecipe, obj)
-
-    def get_is_in_shopping_cart(self, obj):
-        return self._flag(ShoppingCartRecipe, obj)
-
-    # ----------------------------- CRUD -----------------------------
     def create(self, validated_data):
         ingredients = validated_data.pop("recipe_ingredients", [])
-        dish = Dish.objects.create(**validated_data)
+        dish = super().create(validated_data)
         self._bulk_save_ingredients(dish, ingredients)
         return dish
 
     def update(self, instance, validated_data):
         ingredients = validated_data.pop("recipe_ingredients", [])
-        for attr, value in validated_data.items():
-            setattr(instance, attr, value)
-        instance.save()
-        instance.recipe_ingredients.all().delete()
-        self._bulk_save_ingredients(instance, ingredients)
-        return instance
+        dish = super().update(instance, validated_data)
+        dish.recipe_ingredients.all().delete()
+        self._bulk_save_ingredients(dish, ingredients)
+        return dish
