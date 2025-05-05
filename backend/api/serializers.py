@@ -13,6 +13,7 @@ from recipes.models import (
 
 User = get_user_model()
 
+
 # ----------------------------------------------------- BASIC SERIALIZERS
 class IngredientSerializer(serializers.ModelSerializer):
     class Meta:
@@ -87,7 +88,11 @@ class SubscribedAuthorSerializer(PublicUserSerializer):
     )
 
     class Meta(PublicUserSerializer.Meta):
-        fields = (*PublicUserSerializer.Meta.fields, "recipes", "recipes_count")
+        fields = (
+            *PublicUserSerializer.Meta.fields,
+            "recipes",
+            "recipes_count",
+        )
 
     def get_recipes(self, author: User):
         limit_param = self.context["request"].query_params.get("recipes_limit")

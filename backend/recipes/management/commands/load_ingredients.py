@@ -18,12 +18,17 @@ class Command(BaseCommand):
                 Ingredient.objects.get_or_create(**record)
         except Exception as exc:
             self.stderr.write(
-                self.style.ERROR(f"Импорт из {file_path.name} не выполнен: {exc}")
+                self.style.ERROR(
+                    f"Импорт из {file_path.name} не выполнен: {exc}"
+                )
             )
             return
 
         self.stdout.write(
             self.style.SUCCESS(
-                f"Импорт из {file_path.name} завершён. Всего продуктов: {Ingredient.objects.count()}"
+                (
+                    f"Импорт из {file_path.name} завершён. "
+                    f"Всего продуктов: {Ingredient.objects.count()}"
+                )
             )
         )

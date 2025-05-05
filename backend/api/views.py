@@ -99,12 +99,22 @@ class RecipeViewSet(viewsets.ModelViewSet):
         serializer.save(creator=self.request.user)
 
     # ~~~~~~~~~~~~~~~~~~~ extra actions ~~~~~~~~~~~~~
-    @action(detail=True, methods=["post", "delete"], url_path="favorite", permission_classes=[IsAuthenticated])
+    @action(
+        detail=True,
+        methods=["post", "delete"],
+        url_path="favorite",
+        permission_classes=[IsAuthenticated],
+    )
     def favorite(self, request, pk=None):
         dish = get_object_or_404(Dish, pk=pk)
         return self._toggle(request, dish, FavoriteRecipe)
 
-    @action(detail=True, methods=["post", "delete"], url_path="shopping_cart", permission_classes=[IsAuthenticated])
+    @action(
+        detail=True,
+        methods=["post", "delete"],
+        url_path="shopping_cart",
+        permission_classes=[IsAuthenticated],
+    )
     def shopping_cart(self, request, pk=None):
         dish = get_object_or_404(Dish, pk=pk)
         return self._toggle(request, dish, ShoppingCartRecipe)
@@ -117,10 +127,17 @@ class RecipeViewSet(viewsets.ModelViewSet):
             )}
         )
 
-    @action(detail=False, methods=["get"], url_path="download_shopping_cart", permission_classes=[IsAuthenticated])
+    @action(
+        detail=False,
+        methods=["get"],
+        url_path="download_shopping_cart",
+        permission_classes=[IsAuthenticated],
+    )
     def download_shopping_cart(self, request):
         totals = (
-            IngredientAmount.objects.filter(dish__shoppingcarts__user=request.user)
+            IngredientAmount.objects.filter(
+                dish__shoppingcarts__user=request.user
+            )
             .values(
                 name=F("ingredient__name"),
                 unit=F("ingredient__measurement_unit"),
@@ -140,12 +157,16 @@ class RecipeViewSet(viewsets.ModelViewSet):
                 f"Список покупок на {timezone.localdate():%d.%m.%Y}:",
                 "Продукты:",
                 *[
-                    f"{idx}. {row['name'].capitalize()} ({row['unit']}) — {row['total']}"
+                    f"{idx}. {row['name'].capitalize()} ({row['unit']}) — "
+                    f"{row['total']}"
                     for idx, row in enumerate(totals, 1)
                 ],
                 "",
                 "Рецепты, для которых нужны эти продукты:",
-                *[f"{idx}. {title}" for idx, title in enumerate(dish_titles, 1)],
+                *[
+                    f"{idx}. {title}"
+                    for idx, title in enumerate(dish_titles, 1)
+                ],
             ]
         )
 
@@ -163,11 +184,21 @@ class UserViewSet(DjoserUserViewSet):
     permission_classes = (IsAuthenticatedOrReadOnly,)
     pagination_class = CustomPagination
 
-    @action(detail=False, methods=["get"], permission_classes=[IsAuthenticated], url_path="me")
+    @action(
+        detail=False,
+        methods=["get"],
+        permission_classes=[IsAuthenticated],
+        url_path="me",
+    )
     def me(self, request):
         return super().me(request)
 
-    @action(detail=False, methods=["put", "delete"], url_path="me/avatar", permission_classes=[IsAuthenticated])
+    @action(
+        detail=False,
+        methods=["put", "delete"],
+        url_path="me/avatar",
+        permission_classes=[IsAuthenticated],
+    )
     def avatar(self, request):
         user = request.user
         if request.method == "PUT":
@@ -178,7 +209,12 @@ class UserViewSet(DjoserUserViewSet):
         user.avatar.delete(save=True)
         return Response(status=status.HTTP_204_NO_CONTENT)
 
-    @action(detail=True, methods=["post", "delete"], url_path="subscribe", permission_classes=[IsAuthenticated])
+    @action(
+        detail=True,
+        methods=["post", "delete"],
+        url_path="subscribe",
+        permission_classes=[IsAuthenticated],
+    )
     def subscribe(self, request, id=None):
         author = get_object_or_404(User, pk=id)
 
@@ -194,7 +230,10 @@ class UserViewSet(DjoserUserViewSet):
                     {"detail": "Уже подписаны на этого автора"}
                 )
             return Response(
-                PublicUserSerializer(author, context={"request": request}).data,
+                PublicUserSerializer(
+                    author,
+                    context={"request": request}
+                ).data,
                 status=status.HTTP_201_CREATED,
             )
 
@@ -203,7 +242,12 @@ class UserViewSet(DjoserUserViewSet):
         ).delete()
         return Response(status=status.HTTP_204_NO_CONTENT)
 
-    @action(detail=False, methods=["get"], url_path="subscriptions", permission_classes=[IsAuthenticated])
+    @action(
+        detail=False,
+        methods=["get"],
+        url_path="subscriptions",
+        permission_classes=[IsAuthenticated],
+    )
     def subscriptions(self, request):
         qs = request.user.subscriptions.select_related("author")
         paginator = CustomPagination()

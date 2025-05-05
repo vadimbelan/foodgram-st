@@ -93,7 +93,8 @@ class CookingTimeFilter(admin.SimpleListFilter):
     def lookups(self, request, model_admin):
         qs = model_admin.get_queryset(request)
         agg = qs.aggregate(
-            min_time=models.Min("cooking_time"), max_time=models.Max("cooking_time")
+            min_time=models.Min("cooking_time"),
+            max_time=models.Max("cooking_time"),
         )
         low = agg["min_time"] or 0
         high = agg["max_time"] or 60
@@ -109,7 +110,8 @@ class CookingTimeFilter(admin.SimpleListFilter):
         if not val:
             return queryset
         agg = queryset.aggregate(
-            min_time=models.Min("cooking_time"), max_time=models.Max("cooking_time")
+            min_time=models.Min("cooking_time"),
+            max_time=models.Max("cooking_time")
         )
         low = agg["min_time"] or 0
         high = agg["max_time"] or 60
@@ -117,7 +119,10 @@ class CookingTimeFilter(admin.SimpleListFilter):
         if val == "fast":
             return queryset.filter(cooking_time__lte=mid // 2)
         if val == "medium":
-            return queryset.filter(cooking_time__gt=mid // 2, cooking_time__lte=mid)
+            return queryset.filter(
+                cooking_time__gt=mid // 2,
+                cooking_time__lte=mid,
+            )
         return queryset.filter(cooking_time__gt=mid)
 
 
