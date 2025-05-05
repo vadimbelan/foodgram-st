@@ -1,7 +1,7 @@
-from collections import defaultdict
-
+from django.db.models import F, Sum
 from django.http import FileResponse
 from django.utils import timezone
+from django.contrib.auth import get_user_model
 
 from djoser.views import UserViewSet as DjoserUserViewSet
 
@@ -9,7 +9,6 @@ from rest_framework import status, viewsets
 from rest_framework.decorators import action
 from rest_framework.exceptions import ValidationError
 from rest_framework.generics import get_object_or_404
-from rest_framework.pagination import PageNumberPagination
 from rest_framework.permissions import (
     IsAuthenticated,
     IsAuthenticatedOrReadOnly,
@@ -19,16 +18,13 @@ from rest_framework.reverse import reverse
 
 from recipes.models import (
     Ingredient,
+    IngredientAmount,
     Dish,
     FavoriteRecipe,
     ShoppingCartRecipe,
-)
-from users.models import (
-    User,
     UserSubscription,
 )
-
-from .pagination import CustomPagination
+from .pagination import LimitPageNumberPagination
 from .serializers import (
     IngredientSerializer,
     RecipeSerializer,
@@ -37,13 +33,14 @@ from .serializers import (
     PublicUserSerializer,
 )
 
-# ===================================================================== VIEWS
-# ---------------------------------------------------------------- INGREDIENTS
+User = get_user_model()
+
+
+# ───────────────────────────  INGREDIENTS  ─────────────────────────
 class IngredientViewSet(viewsets.ReadOnlyModelViewSet):
-    """Только‑чтение список ингредиентов."""
     queryset = Ingredient.objects.all()
     serializer_class = IngredientSerializer
-    pagination_class = None  # пагинация не нужна
+    pagination_class = None
 
     def get_queryset(self):
         prefix = self.request.query_params.get("name")
@@ -54,100 +51,132 @@ class IngredientViewSet(viewsets.ReadOnlyModelViewSet):
         )
 
 
-# -------------------------------------------------------------------- RECIPES
+# ───────────────────────────────  RECIPES  ─────────────────────────
 class RecipeViewSet(viewsets.ModelViewSet):
-    """CRUD и вспомогательные действия для Dish (рецептов)."""
-    queryset = Dish.objects.all()
+    queryset = Dish.objects.prefetch_related("recipe_ingredients__ingredient")
     serializer_class = RecipeSerializer
     permission_classes = (IsAuthenticatedOrReadOnly,)
-    pagination_class = CustomPagination
+    pagination_class = LimitPageNumberPagination
 
-    # ~~~~~~~~~~~~~~~~~~~~~~~~~~~ helpers ~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+    # ~~~~~~~~~~~~~~~~~~~ helpers ~~~~~~~~~~~~~~~~~~~
     @staticmethod
-    def _toggle(request, dish, model):
-        """Добавить/удалить рецепт в избранное или корзину."""
-        if request.method == "POST":
-            obj, created = model.objects.get_or_create(
-                user=request.user,
-                dish=dish,
-            )
-            if not created:
-                raise ValidationError({"error": "Уже добавлено"})
-            return Response(
-                ShortRecipeSerializer(dish).data,
-                status=status.HTTP_201_CREATED,
-            )
-        model.objects.filter(user=request.user, dish=dish).delete()
-        return Response(status=status.HTTP_204_NO_CONTENT)
+    def _toggle(request, model, pk):
+        """Добавить/удалить рецепт из связанной модели."""
+        dish = get_object_or_404(Dish, pk=pk)
 
-    # ~~~~~~~~~~~~~~~~~~~~~~~~~~ queryset ~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+        # DELETE ─ ранний выход
+        if request.method == "DELETE":
+            get_object_or_404(model, user=request.user, dish=dish).delete()
+            return Response(status=status.HTTP_204_NO_CONTENT)
+
+        # POST
+        _, created = model.objects.get_or_create(
+            user=request.user, dish=dish
+        )
+        if not created:
+            raise ValidationError(
+                {"detail": f"Рецепт «{dish.name}» уже присутствует"}
+            )
+        return Response(
+            ShortRecipeSerializer(dish).data,
+            status=status.HTTP_201_CREATED,
+        )
+
+    # ~~~~~~~~~~~~~~~~~~~ queryset ~~~~~~~~~~~~~~~~~~
     def get_queryset(self):
         qs = super().get_queryset()
-        params = self.request.query_params
+        p = self.request.query_params
 
-        if author := params.get("author"):
+        if author := p.get("author"):
             qs = qs.filter(creator_id=author)
 
-        if params.get("is_favorited") == "1" and self.request.user.is_authenticated:
+        if p.get("is_favorited") == "1" and self.request.user.is_authenticated:
             qs = qs.filter(favorites__user=self.request.user)
 
-        if params.get("is_in_shopping_cart") == "1" and self.request.user.is_authenticated:
+        if (
+            p.get("is_in_shopping_cart") == "1"
+            and self.request.user.is_authenticated
+        ):
             qs = qs.filter(shoppingcarts__user=self.request.user)
 
         return qs
 
-    # ~~~~~~~~~~~~~~~~~~~~~~~~~~ create ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+    # ~~~~~~~~~~~~~~~~~~~ create/update ~~~~~~~~~~~~~
     def perform_create(self, serializer):
         serializer.save(creator=self.request.user)
 
-    # ~~~~~~~~~~~~~~~~~~~~~~~~ extra actions ~~~~~~~~~~~~~~~~~~~~~~~~~
-    @action(detail=True, methods=["post", "delete"], url_path="favorite")
+    # ~~~~~~~~~~~~~~~~~~~ extra actions ~~~~~~~~~~~~~
+    @action(
+        detail=True,
+        methods=["post", "delete"],
+        url_path="favorite",
+        permission_classes=[IsAuthenticated],
+    )
     def favorite(self, request, pk=None):
-        dish = get_object_or_404(Dish, pk=pk)
-        return self._toggle(request, dish, FavoriteRecipe)
+        return self._toggle(request, FavoriteRecipe, pk)
 
-    @action(detail=True, methods=["post", "delete"], url_path="shopping_cart")
+    @action(
+        detail=True,
+        methods=["post", "delete"],
+        url_path="shopping_cart",
+        permission_classes=[IsAuthenticated],
+    )
     def shopping_cart(self, request, pk=None):
-        dish = get_object_or_404(Dish, pk=pk)
-        return self._toggle(request, dish, ShoppingCartRecipe)
+        return self._toggle(request, ShoppingCartRecipe, pk)
 
     @action(detail=True, methods=["get"], url_path="get-link")
     def get_link(self, request, pk=None):
-        short = request.build_absolute_uri(
-            reverse("recipe-short-link", args=[pk])
+        return Response(
+            {
+                "short-link": request.build_absolute_uri(
+                    reverse("recipe-short-link", args=[pk])
+                )
+            }
         )
-        return Response({"short-link": short})
 
-    @action(detail=False, methods=["get"], url_path="download_shopping_cart")
+    @action(
+        detail=False,
+        methods=["get"],
+        url_path="download_shopping_cart",
+        permission_classes=[IsAuthenticated],
+    )
     def download_shopping_cart(self, request):
-        """Сформировать txt‑файл со списком покупок и вернуть его."""
-        if not request.user.is_authenticated:
-            return Response(
-                {"detail": "Только для авторизованных."},
-                status=status.HTTP_401_UNAUTHORIZED,
+        totals = (
+            IngredientAmount.objects.filter(
+                dish__shoppingcarts__user=request.user
             )
+            .values(
+                name=F("ingredient__name"),
+                unit=F("ingredient__measurement_unit"),
+            )
+            .annotate(total=Sum("quantity"))
+            .order_by("name")
+        )
 
-        totals, dish_titles = defaultdict(int), set()
+        dish_info = (
+            Dish.objects.filter(shoppingcarts__user=request.user)
+            .values_list("name", "creator__username")
+            .order_by("name")
+        )
 
-        for item in request.user.shopping_cart_recipes.select_related("dish"):
-            dish_titles.add(item.dish.title)
-            for amt in item.dish.recipe_ingredients.select_related("ingredient"):
-                key = (amt.ingredient.name, amt.ingredient.measurement_unit)
-                totals[key] += amt.amount
+        report_text = "\n".join(
+            [
+                f"Список покупок на {timezone.localdate():%d.%m.%Y}:",
+                "Продукты:",
+                *[
+                    f"{idx}. {row['name'].capitalize()} "
+                    f"({row['unit']}) — {row['total']}"
+                    for idx, row in enumerate(totals, 1)
+                ],
+                "",
+                "Рецепты, для которых нужны эти продукты:",
+                *[
+                    f"{idx}. {title} — @{author}"
+                    for idx, (title, author) in enumerate(dish_info, 1)
+                ],
+            ]
+        )
 
-        today = timezone.localdate().strftime("%d.%m.%Y")
-        lines = [
-            f"Список покупок на {today}:",
-            "Продукты:",
-        ]
-        for idx, ((name, unit), amount) in enumerate(sorted(totals.items()), 1):
-            lines.append(f"{idx}. {name.capitalize()} ({unit}) — {amount}")
-
-        lines.append("\nРецепты, для которых нужны эти продукты:")
-        for idx, title in enumerate(sorted(dish_titles), 1):
-            lines.append(f"{idx}. {title}")
-
-        report_text = "\n".join(lines)
         return FileResponse(
             report_text,
             content_type="text/plain",
@@ -155,72 +184,91 @@ class RecipeViewSet(viewsets.ModelViewSet):
         )
 
 
-# ---------------------------------------------------------------------- USERS
+# ────────────────────────────────  USERS  ──────────────────────────
 class UserViewSet(DjoserUserViewSet):
-    """Регистрация, профиль, аватар и подписки."""
     queryset = User.objects.all()
     serializer_class = PublicUserSerializer
     permission_classes = (IsAuthenticatedOrReadOnly,)
-    pagination_class = CustomPagination
+    pagination_class = LimitPageNumberPagination
 
-    # ~~~~~~~~~~~~~~~~~~~~~ профиль и аватар ~~~~~~~~~~~~~~~~~~~~~~~~~
-    @action(detail=False, methods=["get"], permission_classes=[IsAuthenticated], url_path="me")
+    @action(
+        detail=False,
+        methods=["get"],
+        permission_classes=[IsAuthenticated],
+        url_path="me",
+    )
     def me(self, request):
-        return Response(self.get_serializer(request.user).data)
+        return super().me(request)
 
-    @action(detail=False, methods=["put", "delete"], url_path="me/avatar")
+    @action(
+        detail=False,
+        methods=["put", "delete"],
+        url_path="me/avatar",
+        permission_classes=[IsAuthenticated],
+    )
     def avatar(self, request):
         user = request.user
-        if request.method == "PUT":
-            ser = self.get_serializer(user, data=request.data, partial=True)
-            ser.is_valid(raise_exception=True)
-            ser.save()
-            return Response({"avatar": ser.data["avatar"]})
-        user.avatar.delete(save=True)
-        return Response(status=status.HTTP_204_NO_CONTENT)
 
-    # ~~~~~~~~~~~~~~~~~~~~~~~~~ подписки ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
-    @action(detail=True, methods=["post", "delete"], url_path="subscribe")
+        # DELETE ─ ранний выход
+        if request.method == "DELETE":
+            user.avatar.delete(save=True)
+            return Response(status=status.HTTP_204_NO_CONTENT)
+
+        # PUT
+        ser = self.get_serializer(user, data=request.data, partial=True)
+        ser.is_valid(raise_exception=True)
+        ser.save()
+        return Response({"avatar": ser.data["avatar"]})
+
+    @action(
+        detail=True,
+        methods=["post", "delete"],
+        url_path="subscribe",
+        permission_classes=[IsAuthenticated],
+    )
     def subscribe(self, request, id=None):
         author = get_object_or_404(User, pk=id)
 
         if author == request.user:
-            raise ValidationError({"error": "Нельзя подписаться на себя"})
+            raise ValidationError({"detail": "Нельзя подписаться на себя"})
 
-        if request.method == "POST":
-            obj, created = UserSubscription.objects.get_or_create(
-                subscriber=request.user,
-                author=author,
+        # DELETE ─ ранний выход
+        if request.method == "DELETE":
+            get_object_or_404(
+                UserSubscription, subscriber=request.user, author=author
+            ).delete()
+            return Response(status=status.HTTP_204_NO_CONTENT)
+
+        # POST
+        sub, created = UserSubscription.objects.get_or_create(
+            subscriber=request.user, author=author
+        )
+        if not created:
+            raise ValidationError(
+                {"detail": f"Вы уже подписаны на автора @{author.username}"}
             )
-            if not created:
-                raise ValidationError({"error": "Уже подписаны"})
-            return Response(
-                {"user": obj.subscriber.username, "author": author.username},
-                status=status.HTTP_201_CREATED,
-            )
-
-        UserSubscription.objects.filter(
-            subscriber=request.user,
-            author=author,
-        ).delete()
-        return Response(status=status.HTTP_204_NO_CONTENT)
-
-    @action(detail=False, methods=["get"], url_path="subscriptions")
-    def subscriptions(self, request):
-        subs_qs = (
-            request.user.subscriptions.select_related("author")
-            if request.user.is_authenticated
-            else UserSubscription.objects.none()
+        return Response(
+            PublicUserSerializer(
+                author,
+                context={"request": request}
+            ).data,
+            status=status.HTTP_201_CREATED,
         )
 
-        paginator = PageNumberPagination()
-        paginator.page_size = int(request.query_params.get("limit", 6))
+    @action(
+        detail=False,
+        methods=["get"],
+        url_path="subscriptions",
+        permission_classes=[IsAuthenticated],
+    )
+    def subscriptions(self, request):
+        """Список авторов, на которых подписан текущий пользователь."""
+        paginator = LimitPageNumberPagination()
+        subs_qs = request.user.subscriptions.select_related("author")
         page = paginator.paginate_queryset(subs_qs, request)
 
         authors = [sub.author for sub in page]
-        ser = SubscribedAuthorSerializer(
-            authors,
-            many=True,
-            context={"request": request},
-        )
-        return paginator.get_paginated_response(ser.data)
+        data = SubscribedAuthorSerializer(
+            authors, many=True, context={"request": request}
+        ).data
+        return paginator.get_paginated_response(data)
