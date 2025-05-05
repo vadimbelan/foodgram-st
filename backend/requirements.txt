@@ -7,3 +7,4 @@ python-dotenv
 djangorestframework-simplejwt
 djoser
 drf-extra-fields
+flake8
