@@ -49,6 +49,7 @@ docker-compose up -d --build
 ```bash
 docker-compose exec backend python manage.py migrate
 docker-compose exec backend python manage.py load_ingredients
+docker-compose exec backend python manage.py collectstatic
 docker-compose exec backend python manage.py createsuperuser
 ```
 

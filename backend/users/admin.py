@@ -7,7 +7,14 @@ from .models import UserProfile, UserSubscription
 class CustomUserAdmin(UserAdmin):
     """Модернизация админки для модели пользователя."""
 
-    list_display = ('id', 'email', 'username', 'first_name', 'last_name', 'is_active')
+    list_display = (
+        'id',
+        'email',
+        'username',
+        'first_name',
+        'last_name',
+        'is_active',
+    )
     search_fields = ('email', 'username', 'first_name', 'last_name')
     ordering = ('id',)
 

@@ -9,9 +9,14 @@ class UserProfile(AbstractUser):
 
     email = models.EmailField(unique=True, max_length=254)
     username = models.CharField(
-        max_length=150, unique=True, validators=[RegexValidator(
-            regex=r'^[\w.@+-]+$', message='Допустимы только буквы, цифры и символы: @ . + -'
-        )]
+        max_length=150,
+        unique=True,
+        validators=[
+            RegexValidator(
+                regex=r'^[\w.@+-]+$',
+                message='Допустимы только буквы, цифры и символы: @ . + -',
+            )
+        ],
     )
     first_name = models.CharField(max_length=150, blank=True)
     last_name = models.CharField(max_length=150, blank=True)
@@ -36,15 +41,24 @@ class UserSubscription(models.Model):
     """Модель подписки пользователя на авторов рецептов."""
 
     subscriber = models.ForeignKey(
-        User, related_name="subscriptions", on_delete=models.CASCADE, verbose_name="Подписчик"
+        User,
+        related_name="subscriptions",
+        on_delete=models.CASCADE,
+        verbose_name="Подписчик",
     )
     author = models.ForeignKey(
-        User, related_name="subscribed_by", on_delete=models.CASCADE, verbose_name="Автор"
+        User,
+        related_name="subscribed_by",
+        on_delete=models.CASCADE,
+        verbose_name="Автор",
     )
 
     class Meta:
         constraints = [
-            models.UniqueConstraint(fields=["subscriber", "author"], name="unique_subscription")
+            models.UniqueConstraint(
+                fields=["subscriber", "author"],
+                name="unique_subscription",
+            )
         ]
         verbose_name = "Подписка"
         verbose_name_plural = "Подписки"

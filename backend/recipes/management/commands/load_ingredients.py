@@ -33,4 +33,8 @@ class Command(BaseCommand):
 
         # Выводим результат
         count = len(created)
-        self.stdout.write(self.style.SUCCESS(f'Загружено {count} ингредиентов.'))
+        self.stdout.write(
+            self.style.SUCCESS(
+                f"Загружено {count} ингредиентов."
+            )
+        )

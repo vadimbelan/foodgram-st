@@ -37,7 +37,7 @@ from .serializers import (
     PublicUserSerializer,
 )
 
-# ===================================================================== VIEWS
+
 # ---------------------------------------------------------------- INGREDIENTS
 class IngredientViewSet(viewsets.ReadOnlyModelViewSet):
     """Только‑чтение список ингредиентов."""
@@ -88,10 +88,16 @@ class RecipeViewSet(viewsets.ModelViewSet):
         if author := params.get("author"):
             qs = qs.filter(creator_id=author)
 
-        if params.get("is_favorited") == "1" and self.request.user.is_authenticated:
+        if (
+            params.get("is_in_shopping_cart") == "1"
+            and self.request.user.is_authenticated
+        ):
             qs = qs.filter(favorites__user=self.request.user)
 
-        if params.get("is_in_shopping_cart") == "1" and self.request.user.is_authenticated:
+        if (
+            params.get("is_in_shopping_cart") == "1"
+            and self.request.user.is_authenticated
+        ):
             qs = qs.filter(shoppingcarts__user=self.request.user)
 
         return qs
@@ -131,7 +137,9 @@ class RecipeViewSet(viewsets.ModelViewSet):
 
         for item in request.user.shopping_cart_recipes.select_related("dish"):
             dish_titles.add(item.dish.title)
-            for amt in item.dish.recipe_ingredients.select_related("ingredient"):
+            for amt in item.dish.recipe_ingredients.select_related(
+                "ingredient"
+            ):
                 key = (amt.ingredient.name, amt.ingredient.measurement_unit)
                 totals[key] += amt.amount
 
@@ -140,7 +148,9 @@ class RecipeViewSet(viewsets.ModelViewSet):
             f"Список покупок на {today}:",
             "Продукты:",
         ]
-        for idx, ((name, unit), amount) in enumerate(sorted(totals.items()), 1):
+        for idx, ((name, unit), amount) in enumerate(
+            sorted(totals.items()), 1
+        ):
             lines.append(f"{idx}. {name.capitalize()} ({unit}) — {amount}")
 
         lines.append("\nРецепты, для которых нужны эти продукты:")
@@ -164,7 +174,12 @@ class UserViewSet(DjoserUserViewSet):
     pagination_class = CustomPagination
 
     # ~~~~~~~~~~~~~~~~~~~~~ профиль и аватар ~~~~~~~~~~~~~~~~~~~~~~~~~
-    @action(detail=False, methods=["get"], permission_classes=[IsAuthenticated], url_path="me")
+    @action(
+        detail=False,
+        methods=["get"],
+        permission_classes=[IsAuthenticated],
+        url_path="me",
+    )
     def me(self, request):
         return Response(self.get_serializer(request.user).data)
 

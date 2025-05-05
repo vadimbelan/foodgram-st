@@ -8,6 +8,7 @@ from .models import (
     ShoppingCartRecipe,
 )
 
+
 # ---------------------------------------------------- INGREDIENTS
 @admin.register(Ingredient)
 class IngredientAdmin(admin.ModelAdmin):
@@ -15,6 +16,7 @@ class IngredientAdmin(admin.ModelAdmin):
     list_filter = ("measurement_unit",)
     search_fields = ("name",)
     ordering = ("name",)
+
 
 # -------------------------------------------------------- DISHES
 @admin.register(Dish)
@@ -28,11 +30,13 @@ class DishAdmin(admin.ModelAdmin):
     def fav_cnt(self, obj):
         return obj.favorites.count()
 
+
 # -------------------------------------------- INGREDIENT AMOUNTS
 @admin.register(IngredientAmount)
 class IngredientAmountAdmin(admin.ModelAdmin):
     list_display = ("dish", "ingredient", "amount")
     search_fields = ("dish__title", "ingredient__name")
+
 
 # --------------------------------------- FAVS & SHOPPING CARTS
 @admin.register(FavoriteRecipe, ShoppingCartRecipe)

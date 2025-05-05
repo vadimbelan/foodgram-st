@@ -2,6 +2,7 @@ from django.core.validators import MinValueValidator
 from django.db import models
 from users.models import User
 
+
 # ----------------------------------------------------- BASE DATA
 class Ingredient(models.Model):
     """Справочник ингредиентов."""
@@ -21,6 +22,7 @@ class Ingredient(models.Model):
 
     def __str__(self):
         return f"{self.name} ({self.measurement_unit})"
+
 
 # ------------------------------------------------------- RECIPE
 class Dish(models.Model):
@@ -57,6 +59,7 @@ class Dish(models.Model):
     def __str__(self):
         return f"{self.title} (id={self.id})"
 
+
 # --------------------------------------- LINK RECIPE <-> INGREDIENT
 class IngredientAmount(models.Model):
     """Количество ингредиента в рецепте."""
@@ -92,6 +95,7 @@ class IngredientAmount(models.Model):
             f"{self.ingredient.name} — {self.amount} "
             f"{self.ingredient.measurement_unit} для «{self.dish.title}»"
         )
+
 
 # ---------------------------------------------------- RELATIONS
 class FavoriteRecipe(models.Model):

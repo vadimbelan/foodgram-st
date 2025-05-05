@@ -5,7 +5,7 @@ from rest_framework.response import Response
 from rest_framework.permissions import IsAuthenticatedOrReadOnly
 
 from django.shortcuts import get_object_or_404
-from recipes.models import Dish, Ingredient, FavoriteRecipe, ShoppingCartRecipe
+from recipes.models import Dish, FavoriteRecipe, ShoppingCartRecipe
 from recipes.serializers import DishSerializer, ShortDishSerializer
 from api.pagination import CustomPagination
 
@@ -36,10 +36,16 @@ class DishViewSet(viewsets.ModelViewSet):
     def _toggle_recipe_in_list(request, recipe, model):
         """Метод для добавления/удаления рецепта в избранное или корзину."""
         if request.method == "POST":
-            obj, created = model.objects.get_or_create(user=request.user, dish=recipe)
+            obj, created = model.objects.get_or_create(
+                user=request.user,
+                dish=recipe,
+            )
             if not created:
                 raise ValidationError({"error": "Рецепт уже добавлен"})
-            return Response(ShortDishSerializer(recipe).data, status=status.HTTP_201_CREATED)
+            return Response(
+                ShortDishSerializer(recipe).data,
+                status=status.HTTP_201_CREATED,
+            )
 
         get_object_or_404(model, user=request.user, dish=recipe).delete()
         return Response(status=status.HTTP_204_NO_CONTENT)

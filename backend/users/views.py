@@ -1,12 +1,20 @@
+from django.shortcuts import get_object_or_404
+
 from rest_framework import status, viewsets
 from rest_framework.exceptions import ValidationError
 from rest_framework.decorators import action
 from rest_framework.response import Response
-from rest_framework.permissions import IsAuthenticated, IsAuthenticatedOrReadOnly
+from rest_framework.permissions import (
+    IsAuthenticated,
+    IsAuthenticatedOrReadOnly,
+)
 
 from users.models import UserProfile, UserSubscription
-from users.serializers import UserProfileSerializer, UserSubscriptionSerializer, ShortUserSerializer
-from recipes.models import Dish
+from users.serializers import (
+    UserProfileSerializer,
+    UserSubscriptionSerializer,
+    ShortUserSerializer,
+)
 
 
 class UserProfileViewSet(viewsets.ModelViewSet):
@@ -18,7 +26,11 @@ class UserProfileViewSet(viewsets.ModelViewSet):
     pagination_class = None
 
     # Получение информации о текущем пользователе
-    @action(detail=False, methods=['get'], permission_classes=[IsAuthenticated])
+    @action(
+        detail=False,
+        methods=['get'],
+        permission_classes=[IsAuthenticated],
+    )
     def me(self, request):
         """Получение данных о текущем пользователе."""
         return Response(self.get_serializer(request.user).data)
@@ -29,14 +41,24 @@ class UserProfileViewSet(viewsets.ModelViewSet):
         """Метод для изменения или удаления аватара."""
         user = request.user
         if request.method == 'PUT':
-            serializer = self.get_serializer(user, data=request.data, partial=True)
+            serializer = self.get_serializer(
+                user,
+                data=request.data,
+                partial=True,
+            )
             serializer.is_valid(raise_exception=True)
             serializer.save()
-            return Response({'avatar': serializer.data['avatar']}, status=status.HTTP_200_OK)
-        
+            return Response(
+                {'avatar': serializer.data['avatar']},
+                status=status.HTTP_200_OK,
+            )
+
         # DELETE
         user.avatar.delete()
-        return Response({'message': 'Аватар удалён'}, status=status.HTTP_204_NO_CONTENT)
+        return Response(
+            {'message': 'Аватар удалён'},
+            status=status.HTTP_204_NO_CONTENT,
+        )
 
     # Подписка и отписка
     @action(detail=True, methods=['post', 'delete'], url_path='subscribe')
@@ -44,17 +66,32 @@ class UserProfileViewSet(viewsets.ModelViewSet):
         """Подписка на пользователя (или отписка)."""
         author = get_object_or_404(UserProfile, pk=id)
         if author == request.user:
-            raise ValidationError({'error': 'Нельзя подписаться на самого себя'})
+            raise ValidationError(
+                {'error': 'Нельзя подписаться на самого себя'}
+            )
 
         if request.method == 'POST':
-            subscription, created = UserSubscription.objects.get_or_create(subscriber=request.user, author=author)
+            subscription, created = UserSubscription.objects.get_or_create(
+                subscriber=request.user,
+                author=author,
+            )
             if not created:
                 raise ValidationError({'error': 'Подписка уже оформлена'})
-            return Response({'user': subscription.subscriber.username, 'author': subscription.author.username},
-                            status=status.HTTP_201_CREATED)
+            return Response(
+                {
+                    'user': subscription.subscriber.username,
+                    'author': subscription.author.username,
+                },
+                status=status.HTTP_201_CREATED,
+            )
 
         # DELETE
-        get_object_or_404(UserSubscription, subscriber=request.user, author=author).delete()
+        subscription = get_object_or_404(
+            UserSubscription,
+            subscriber=request.user,
+            author=author,
+        )
+        subscription.delete()
         return Response(status=status.HTTP_204_NO_CONTENT)
 
     # Список подписок пользователя
@@ -63,7 +100,11 @@ class UserProfileViewSet(viewsets.ModelViewSet):
         """Получить список авторов, на которых подписан пользователь."""
         user = request.user
         subscriptions = user.subscriptions.select_related('author')
-        serializer = UserSubscriptionSerializer(subscriptions, many=True, context={'request': request})
+        serializer = UserSubscriptionSerializer(
+            subscriptions,
+            many=True,
+            context={'request': request},
+        )
         return Response(serializer.data)
 
 

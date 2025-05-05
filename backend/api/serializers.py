@@ -11,9 +11,11 @@ from recipes.models import (
     FavoriteRecipe,
     ShoppingCartRecipe,
 )
-from users.models import UserSubscription, User
+from users.models import UserSubscription
 
 # ----------------------------------------------------- BASIC SERIALIZERS
+
+
 class IngredientSerializer(serializers.ModelSerializer):
     class Meta:
         model = Ingredient
@@ -51,6 +53,7 @@ class ShortRecipeSerializer(serializers.ModelSerializer):
     class Meta:
         model = Dish
         fields = ("id", "name", "image", "cooking_time")
+
 
 # ---------------------------------------------------------- USER‑SIDE
 class PublicUserSerializer(DjoserUserSerializer):
@@ -94,6 +97,7 @@ class SubscribedAuthorSerializer(PublicUserSerializer):
         )
         qs = author.recipes.all()[:limit]
         return ShortRecipeSerializer(qs, many=True).data
+
 
 # ----------------------------------------------------------- MAIN DISH
 class RecipeSerializer(serializers.ModelSerializer):
